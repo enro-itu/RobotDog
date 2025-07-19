@@ -3,7 +3,7 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 import gait_updated as gait
-from inverse import leg_IK
+from inverse_updated import inverse_kinematics as leg_IK
 
 # Load model
 # Change this according to your path
@@ -15,13 +15,13 @@ d = mujoco.MjData(m)
 # P gain for position control
 Kp = 20.0
 
-foot_traj = gait.gait(0, 0, 10, 0)
+foot_traj = gait.gait(0, 0, 100, 0)
 each_step = []
 
 for foot_point in foot_traj:
     each = ()
     for coord in foot_point:
-        each = each + ((leg_IK(coord[0], coord[1], coord[2])),)
+        each = each + ((leg_IK(coord[0], coord[1], coord[2], 0.067, 0.213, 0.210, 0.094)),)
     each_step.append(each)
 
 """
@@ -54,7 +54,7 @@ def P_controller(target_pos, measured_pos):
     return Kp * error
 
 t = 0
-delay = 1000
+delay = 100
 
 with mujoco.viewer.launch_passive(m, d) as viewer:
     time.sleep(5)
