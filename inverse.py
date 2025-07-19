@@ -1,78 +1,109 @@
+#!/usr/bin/env python3
+"""
+3-DOF Robotic Arm Kinematics
+
+This script provides forward and inverse kinematics functions for a
+3-DOF robotic arm with three revolute joints (θ1, θ2, θ3) and link
+offsets L1, L2, L3, L4. You can import these functions into your
+simulation or run this file directly to test them.
+"""
+
 import numpy as np
 
-def leg_IK(x, y, z, L_haa=0.0955, L_thigh=0.213, L_shin=0.213):
-    """
-    Computes 3DOF inverse kinematics for Unitree Go2 leg.
-    """
-    q1 = np.arctan2(y, z)
-    y_proj = np.sqrt(y ** 2 + z ** 2) - L_haa
-    D = np.sqrt(x ** 2 + y_proj ** 2)
-    cos_q3 = (L_thigh ** 2 + L_shin ** 2 - D ** 2) / (2 * L_thigh * L_shin)
-    cos_q3 = np.clip(cos_q3, -1.0, 1.0)
-    q3 = np.pi - np.arccos(cos_q3)
-    alpha = np.arctan2(y_proj, x)
-    cos_beta = (L_thigh ** 2 + D ** 2 - L_shin ** 2) / (2 * L_thigh * D)
-    cos_beta = np.clip(cos_beta, -1.0, 1.0)
-    beta = np.arccos(cos_beta)
-    q2 = alpha - beta
-    return q1, q2, q3
 
-def go2_leg_ik(x, y, z, L_hip=0.0955, L_thigh=0.213, L_shin=0.213):
+def forward_kinematics(theta1, theta2, theta3, L1, L2, L3, L4):
     """
-    Inverse kinematics for one Unitree Go2 leg.
+    Compute the end-effector position (x, y, z) of a 3-DOF arm.
+
+    Parameters
+    ----------
+    theta1, theta2, theta3 : float
+        Joint angles in radians.
+    L1, L2, L3, L4 : float
+        Link lengths as defined in your model.
+        - L1: vertical offset from base to joint 2
+        - L2: length of link 2
+        - L3: length of link 3
+        - L4: x-offset from link 3 to end-effector
+
+    Returns
+    -------
+    x, y, z : float
+        Cartesian coordinates of the end effector.
+    """
+    # Precompute sines and cosines
+    c1, s1 = np.cos(theta1), np.sin(theta1)
+    # Combined angle for joints 2 & 3
+    phi23 = theta2 + theta3
+    c23, s23 = np.cos(phi23), np.sin(phi23)
+
+    # Compute planar projection (in the θ1=0 plane)
+    plane_x = L2 * np.cos(theta2) + L3 * c23 + L4
+    plane_z = L2 * np.sin(theta2) + L3 * s23
+
+    # Rotate into world frame
+    x = c1 * plane_x
+    y = s1 * plane_x
+    z = L1 + plane_z
+
+    return x, y, z
+
+
+def inverse_kinematics(x, y, z, L1, L2, L3, L4):
+    """
+    Solve for (θ1, θ2, θ3) given end-effector (x, y, z).
 
     Parameters
     ----------
     x, y, z : float
-        Desired foot position in the hip-yaw joint frame:
-        x = forward, y = lateral (to the left), z = upwards.
-    L_hip : float
-        Distance from hip-yaw axis to hip-pitch axis.
-    L_thigh : float
-        Length of the thigh link.
-    L_shin : float
-        Length of the shin link.
+        Desired end-effector coordinates.
+    L1, L2, L3, L4 : float
+        Link lengths (same definitions as in forward_kinematics).
 
     Returns
     -------
-    q_yaw, q_hip, q_knee : tuple of floats
-        Joint angles (radians):
-          q_yaw  – rotation about vertical (hip yaw)
-          q_hip  – hip pitch
-          q_knee – knee pitch
+    theta1, theta2, theta3 : float
+        Joint angles in radians.
     """
+    # Base rotation
+    theta1 = np.arctan2(y, x)
 
-    # 1) Hip yaw: project foot into horizontal plane
-    q_yaw = np.arctan2(y, x)
+    # Project into the plane of joints 2 & 3
+    r = np.hypot(x, y) - L4
+    s = z - L1
 
-    # 2) Project into sagittal plane of the hip-pitch joint
-    r = np.hypot(x, y) - L_hip
-    d = np.hypot(r, z)
+    # Distance from joint2 to the "wrist" point
+    D = np.hypot(r, s)
 
-    # 3) Law of cosines for knee angle
-    cos_knee = (L_thigh**2 + L_shin**2 - d**2) / (2 * L_thigh * L_shin)
-    cos_knee = np.clip(cos_knee, -1.0, 1.0)
-    q_knee = np.pi - np.arccos(cos_knee)
+    # Law of Cosines for theta3
+    cos_q3 = (D**2 - L2**2 - L3**2) / (2 * L2 * L3)
+    cos_q3 = np.clip(cos_q3, -1.0, 1.0)  # numerical safety
+    theta3 = np.arccos(cos_q3)
 
-    # 4) Hip pitch: angle to target plus offset from triangle
-    alpha = np.arctan2(-z, r)                # downwards is positive hip-pitch
-    cos_beta = (L_thigh**2 + d**2 - L_shin**2) / (2 * L_thigh * d)
-    cos_beta = np.clip(cos_beta, -1.0, 1.0)
-    beta = np.arccos(cos_beta)
-    q_hip = alpha + beta
+    # Compute intermediate angles for theta2
+    phi = np.arctan2(s, r)
+    psi = np.arctan2(L3 * np.sin(theta3), L2 + L3 * np.cos(theta3))
 
-    return q_yaw, q_hip, q_knee
+    theta2 = phi - psi
+
+    return theta1, theta2, theta3
+
+
+def main():
+    # Example link lengths
+    L1, L2, L3, L4 = 0.067, 0.213, 0.210, 0.094 
+
+    # Example joint angles
+    t1, t2, t3 = 0.2, -0.5, 0.8
+
+    # Forward kinematics
+    x, y, z = forward_kinematics(t1, t2, t3, L1, L2, L3, L4)
+    print(f"Forward Kinematics → x: {x:.4f}, y: {y:.4f}, z: {z:.4f}")
+
+    # Inverse kinematics (should recover the original angles)
+    q1, q2, q3 = inverse_kinematics(x, y, z, L1, L2, L3, L4)
+    print(f"Inverse Kinematics → θ1: {q1:.4f}, θ2: {q2:.4f}, θ3: {q3:.4f}")
+
 
 if __name__ == "__main__":
-    # Target foot positions for all four legs (x, y, z)
-    foot_targets = {
-        "FL": [0.25, 0.05, -0.25],  # Front Left
-        "FR": [0.25, -0.05, -0.25], # Front Right
-        "RL": [-0.25, 0.05, -0.25], # Rear Left
-        "RR": [-0.25, -0.05, -0.25],# Rear Right
-    }
-
-    print("Unitree Go2 Leg IK Results:")
-    for leg_name, (x, y, z) in foot_targets.items():
-        q1, q2, q3 = leg_IK(x, y, z)
-        print(f"{leg_name} | HAA: {np.degrees(q1):6.2f}° | HFE: {np.degrees(q2):6.2f}° | KFE: {np.degrees(q3):6.2f}°")
+    main()
